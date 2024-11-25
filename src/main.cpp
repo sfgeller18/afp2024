@@ -7,13 +7,21 @@
 #include <ctime>
 // #include "breedenLitzenberger.hpp"
 
+constexpr double S = 5000;
+constexpr double K = 5000;
+constexpr double r = 0.049;
+constexpr double y = 0.011;
+constexpr double sigma = 0.155;
+constexpr double T = 1;
+constexpr double principal = 1000;
+constexpr double coupon = 50;
+constexpr double cs = 0.01;
+constexpr double conversionRatio = 0.2;
+
 int main(int argc, char** argv) {
     // take 1 param the size of the sample array
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <sample size>" << std::endl;
-        return 1;
-    }
-    size_t sampleSize = std::stoul(argv[1]);
-    generator s(sampleSize, 1, standard, {0, 1});
-    s.plotSamples();
+    NaiveConvertibleTree<20000> cdtree(S, K, r, y, sigma, T, principal, coupon, cs, conversionRatio, 5000, {1, 2, 3, 4, 5}, {1, 2, 3, 4, 5}, 5000, 5000);
+    cdtree.run();
+    std::cout << cdtree.value() << std::endl;
+    return 0;
 }
