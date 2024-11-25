@@ -12,27 +12,34 @@
 #include <ctime>
 #include "py_manager.hpp"
 
-inline std::mt19937 generator(unsigned seed = 666) {
-    if (seed = 666) {return std::mt19937(seed);}
-    else {return std::mt19937(std::random_device{}());}
+#if defined(USE_MKL)
+#include <mkl_vsl.h>
+#include <mkl_cblas.h>
+#elif defined(USE_CUDA)
+#include <cuda_runtime.h>
+#include <curand_kernel.h>
+#else
+inline std::mt19937 mtgen(unsigned seed = std::random_device{}()) {
+    return std::mt19937(seed);
 }
 
 inline void alignGamma(double* samples, const double& mu, const size_t& vecSize) {
-    std::mt19937 gen = generator(); // Standard mersenne_twister_engine seeded with rd()
+    std::mt19937 gen = mtgen(); // Standard mersenne_twister_engine seeded with rd()
     std::uniform_int_distribution<> dis(0, 1); // Define the distribution for 0 and 1
     for (size_t i = 0; i < vecSize; ++i) {
         samples[i] *= dis(gen) == 0 ? -1 : 1; // Multiply by -1 or 1 randomly
         samples[i] += mu;
     }
 }
+#endif
 
 
 
 // Generate a length n, d-dimensional N(0, 1) Sobol QRNG sample
-class sobolSample {
+class generator {
     public:
-        sobolSample(const size_t n, const size_t dim, const DistributionType& type = DistributionType::standard, const std::vector<double>& kwargs = {});
-        ~sobolSample();
+        generator(const size_t n, const size_t dim, const DistributionType& type = DistributionType::standard, const std::vector<double>& kwargs = {});
+        ~generator();
         double* getSamples() const;
         double getSamples(size_t i, size_t j) const {
             return samples[i * dim + j];
@@ -56,22 +63,22 @@ class sobolSample {
         DistributionType distribution;
 };
 
-class sobolNormal : public sobolSample {
+class qrngNormal : public generator {
 public:
-    sobolNormal(const size_t n, const size_t dim, const double& mu, const double& sigma)
-        : sobolSample(n, dim, standard, std::vector<double>{mu, sigma}) {} // Pass "normal" as type
+    qrngNormal(const size_t n, const size_t dim, const double& mu, const double& sigma)
+        : generator(n, dim, standard, std::vector<double>{mu, sigma}) {} // Pass "normal" as type
 };
 
 
 // Initialize a length n, d-dimensional N(mu, sigma, moment) Sobol QRNG sample \sim e^(-z^moment)
-class sobolGenNormal : public sobolSample {
-        sobolGenNormal(const size_t n, const size_t dim, const double& moment, const double& mu, const double& sigma)
-        : sobolSample(n, dim, general, std::vector<double>{moment, mu, sigma}) {} // Pass "gen" as type
+class qrngGenNormal : public generator {
+        qrngGenNormal(const size_t n, const size_t dim, const double& moment, const double& mu, const double& sigma)
+        : generator(n, dim, general, std::vector<double>{moment, mu, sigma}) {} // Pass "gen" as type
 };
 
-class sobolSkewNormal : public sobolSample {
-    sobolSkewNormal(const size_t n, const size_t dim, const double& mu, const double& sigma, const double& sigma2, const double& moment)
-        : sobolSample(n, dim, skewNormal, std::vector<double>{mu, sigma, sigma2, moment}) {} // Pass "skewNormal" as type
+class qrngSkewNormal : public generator {
+    qrngSkewNormal(const size_t n, const size_t dim, const double& mu, const double& sigma, const double& sigma2, const double& moment)
+        : generator(n, dim, skewNormal, std::vector<double>{mu, sigma, sigma2, moment}) {} // Pass "skewNormal" as type
 };
 
 #endif // SOBOLMKL_H

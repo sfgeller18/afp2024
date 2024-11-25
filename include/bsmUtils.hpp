@@ -3,6 +3,15 @@
 
 #include <cmath>
 #include <array>
+#include <utility>
+
+constexpr std::pair<double, double> bin_probs(double r, double y, double sigma, double dt) {
+    double u = std::exp(sigma * std::sqrt(dt)); // Up factor
+    double d = 1.0 / u;                        // Down factor (inverse of up)
+    double p_up = (std::exp((r - y) * dt) - d) / (u - d); // Risk-neutral upward probability
+    double p_down = 1.0 - p_up;                             // Downward probability
+    return {p_up, p_down};
+}
 
 constexpr long double default_S = 5000;
 constexpr long double default_K = 5000;

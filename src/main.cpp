@@ -2,7 +2,8 @@
 
 #include "sp.hpp"
 #include "bsmUtils.hpp"
-#include "sobol.hpp"
+#include "generator.hpp"
+#include "tree.hpp"
 #include <ctime>
 // #include "breedenLitzenberger.hpp"
 
@@ -13,6 +14,6 @@ int main(int argc, char** argv) {
         return 1;
     }
     size_t sampleSize = std::stoul(argv[1]);
-    sobolSample s(sampleSize, 1, standard, {0, 1});
+    generator s(sampleSize, 1, standard, {0, 1});
     s.plotSamples();
 }
