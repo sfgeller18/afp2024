@@ -1,0 +1,4 @@
+/build/*
+/outputs/*
+/scripts/__pycache__/*
+/.vscode/*
