@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 
 # Find Python 3.12 (adjust the version number if needed)
-find_package(Python3 3.12 REQUIRED COMPONENTS Interpreter Development)
+find_package(Python3 3.12 REQUIRED COMPONENTS Interpreter Development NumPy)
 
 # Add source files
 file(GLOB SOURCES "src/*.cpp")
@@ -30,6 +30,7 @@ target_include_directories(afp
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${Python3_INCLUDE_DIRS}  # Include directories for Python headers
+    ${Python3_NumPy_INCLUDE_DIRS}  # Include directories for NumPy headers
 )
 
 # Optionally, specify the Python library directory if necessary

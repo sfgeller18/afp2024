@@ -1,5 +1,8 @@
+#define PY_ARRAY_UNIQUE_SYMBOL AFP
+
 #include "sp.hpp"
 #include "bsmUtils.hpp"
+#include "sobol.hpp"
 #include <ctime>
 // #include "breedenLitzenberger.hpp"
 

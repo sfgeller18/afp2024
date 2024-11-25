@@ -1,10 +1,11 @@
 #include "sobol.hpp"
-#include <ctime>
-#include <iterator>
-#include <Python.h>
+
 
 #define DEFAULT_DATA_PATH "../outputs/data/sobolSample_" + std::to_string(std::time(0)) + ".h5"
 #define DEFAULT_PLOT_PATH "../outputs/plots/sobolSample_" + std::to_string(std::time(0)) + ".png"
+
+
+
 
 
 sobolSample::sobolSample(const size_t n, const size_t dim, const DistributionType& type, const std::vector<double>& kwargs)
@@ -140,67 +141,19 @@ void sobolSample::writeSamplesToFile(const std::string& filename) const {
     }
 }
 
+
 void sobolSample::plotSamples(const std::string& outputPath) const {
     // Print moments
     this->printMoments();
 
     // Set default output filename if not provided
     std::string outputFilename = outputPath;
-    if (outputPath == "") {
-        outputFilename = DEFAULT_PLOT_PATH;
-    }
+    if (outputPath == "") {outputFilename = DEFAULT_PLOT_PATH;}
 
-    // Prepare the data to be passed to the Python script
-    Py_Initialize(); // Initialize the Python interpreter
+    // Call the general Python function with NumPy array data
+    npy_intp dims[] = {static_cast<npy_intp>(size * dim)};  // Flattened 1D array
+    std::unordered_map<std::string, std::string> kwargs;
+    kwargs["output_path"] = outputFilename;
 
-    // Create a Python list from the C++ vector (samples)
-    PyObject* pList = PyList_New(size * dim);
-    for (size_t i = 0; i < size * dim; ++i) {
-        PyList_SetItem(pList, i, PyFloat_FromDouble(samples[i])); // Insert each sample into the list
-    }
-
-    // Add the script directory to Python's path so it can find the plot_script
-    std::string scriptDir = "../scripts"; // Path to the script directory relative to the executable
-    PyObject* sysPath = PyImport_ImportModule("sys");
-    if (sysPath) {
-        PyObject* pPath = PyObject_GetAttrString(sysPath, "path");
-        if (pPath) {
-            PyList_Append(pPath, PyUnicode_DecodeFSDefault(scriptDir.c_str()));
-            Py_XDECREF(pPath);
-        }
-        Py_XDECREF(sysPath);
-    }
-
-    // Import the Python module (plot_script.py)
-    PyObject* pModuleName = PyUnicode_DecodeFSDefault("plot_script");
-    PyObject* pModule = PyImport_Import(pModuleName);
-    Py_XDECREF(pModuleName);
-
-    if (pModule != nullptr) {
-        // Get the function "process_data_from_cpp" from the Python script
-        PyObject* pFunc = PyObject_GetAttrString(pModule, "process_data_from_cpp");
-
-        if (pFunc && PyCallable_Check(pFunc)) {
-            // Call the Python function, passing the data list and the output path as arguments
-            PyObject* pArgs = PyTuple_Pack(2, pList, PyUnicode_FromString(outputFilename.c_str()));
-            PyObject* pValue = PyObject_CallObject(pFunc, pArgs);
-            Py_XDECREF(pArgs);
-
-            if (pValue != nullptr) {
-                // If needed, you can process the result from Python here
-                Py_XDECREF(pValue);
-            } else {
-                PyErr_Print(); // Print error if the Python function call failed
-            }
-        } else {
-            std::cerr << "Cannot find function 'process_data_from_cpp' in the Python script." << std::endl;
-        }
-
-        Py_XDECREF(pFunc);
-        Py_XDECREF(pModule);
-    } else {
-        PyErr_Print(); // If the Python module failed to load
-    }
-
-    Py_Finalize(); // Finalize the Python interpreter
+    call_python_w_numpy(samples, dims, "plot_script", kwargs);
 }

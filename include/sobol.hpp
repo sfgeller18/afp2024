@@ -9,6 +9,8 @@
 // #include <numeric>
 #include "genNormDist.hpp"
 
+#include <ctime>
+#include "py_manager.hpp"
 
 inline std::mt19937 generator(unsigned seed = 666) {
     if (seed = 666) {return std::mt19937(seed);}

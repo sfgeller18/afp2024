@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 def plot_samples(data, output_path):
     # Convert the input data to a list if it is a tuple or array
-    data = list(data)
+    data.flags.writeable = False
     
     # Create a histogram of the data
     plt.figure(figsize=(10, 6))
@@ -19,6 +19,10 @@ def plot_samples(data, output_path):
     plt.savefig(output_path)
     plt.close()
 
-# This part is executed when called from the C++ code
-def process_data_from_cpp(data_list, output_path):
+def process_data_from_cpp(data_list, kwargs):
+    output_path = kwargs.get('output_path', 'output.png')
+    print(f"Saving plot to: {output_path}")
+    
+    # Now call the plotting function
     plot_samples(data_list, output_path)
+
