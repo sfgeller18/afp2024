@@ -18,14 +18,15 @@ constexpr double coupon = 50;
 constexpr double cs = 0.01;
 constexpr double conversionRatio = 0.2;
 
-constexpr size_t N = 5000;
+constexpr size_t N = 20000;
 
 int main(int argc, char** argv) {
     // take 1 param the size of the sample array
-    std::vector<size_t> conversionDates = {1000, 2000, 3000, 4000, 5000};
-    std::vector<size_t> couponDates = {1000, 2000, 3000, 4000, 5000};
+    size_t y_length = size_t(N / T);
+    std::vector<size_t> conversionDates = {y_length, 2 * y_length, 3 * y_length, 4 * y_length, 5 * y_length};
+    std::vector<size_t> couponDates = {y_length, 2 * y_length, 3 * y_length, 4 * y_length, 5 * y_length};
 
-    NaiveConvertibleTree<100000> cdtree(S, K, r, y, sigma, T, principal, coupon, cs, conversionRatio, 5000, conversionDates, couponDates, 1400, 1100);
+    NaiveConvertibleTree<N> cdtree(S, K, r, y, sigma, T, principal, coupon, cs, conversionRatio, 5000, conversionDates, couponDates);
     cdtree.run();
     std::cout << cdtree.value() << std::endl;
     return 0;
