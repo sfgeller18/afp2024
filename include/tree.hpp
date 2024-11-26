@@ -3,6 +3,10 @@
 
 #include "bsmUtils.hpp"
 
+#define SIMD_ALIGNMENT 64
+#define SIMDLEN 8
+
+
 constexpr std::pair<double, double> bin_probs(double r, double y, double sigma, double dt) {
     double u = std::exp(sigma * std::sqrt(dt)); // Up factor
     double d = 1.0 / u;                        // Down factor (inverse of up)
@@ -38,7 +42,7 @@ public:
     virtual void run();
     double value() const {return tree[0];}
 protected:
-    std::array<double, BINOMIAL_HOLDER_LENGTH(depth)> tree;
+    alignas(SIMD_ALIGNMENT) std::array<double, BINOMIAL_HOLDER_LENGTH(depth)> tree;
     double S, K, r, y, sigma, T;
 };
 
@@ -86,11 +90,11 @@ class NaiveConvertibleTree : public BinomialTree<depth> {
 public:
     NaiveConvertibleTree(double S, double K, double r, double y, double sigma, double T,
                         double principal, double coupon, double cs, double conversionRatio, double conversionPrice, const std::vector<size_t>& conversionDates, const std::vector<size_t>& couponDates,
-                         double callablePrice, double puttablePrice);
+                         double callablePrice = 0.0, double puttablePrice = 0.0);
     void run() override;
 
 private:
-    std::array<double, depth> rn_rate; // Risk-neutral rate holder
+    alignas(SIMD_ALIGNMENT) std::array<double, depth> rn_rate; // Risk-neutral rate holder
 
 private:
     double principal;
@@ -145,26 +149,48 @@ void NaiveConvertibleTree<depth>::run() {
     #endif
    
     for (size_t i = 1; i < depth; ++i) {
-        for (size_t j = 0; j < depth - i; ++j) {
-            // Calculate expected risk-neutral rate
-            rn_rate[j] = p_u * rn_rate[j] + p_d * rn_rate[j + 1];
-            
-            // Option value calculation with discounting
-            this->tree[j] = std::exp(-rn_rate[j] * dt) * (p_u * this->tree[j] + p_d * this->tree[j + 1]);
-        }
-        // std::cout << this->tree[0] << std::endl;
+        double* rn_rate_data = rn_rate.data();
+        double* tree_data = this->tree.data();
 
+        #pragma omp simd aligned(rn_rate_data: SIMD_ALIGNMENT) simdlen(SIMDLEN)
+        for (size_t j = 0; j < depth - i; ++j) {
+            rn_rate_data[j] = p_u * rn_rate_data[j] + p_d * rn_rate_data[j + 1];            
+        }
+
+        #pragma omp simd aligned(tree_data: SIMD_ALIGNMENT) simdlen(SIMDLEN)
+        for (size_t j = 0; j < depth - i; ++j) {
+            tree_data[j] = std::exp(-rn_rate_data[j] * dt) * (p_u * tree_data[j] + p_d * tree_data[j + 1]);
+        }
+
+        if (callablePrice > 0) {
+            #pragma omp simd aligned(tree_data: SIMD_ALIGNMENT) simdlen(SIMDLEN)
+            for (size_t j = 0; j < depth - i; ++j) {
+                tree_data[j] = std::min(tree_data[j], callablePrice);
+            }
+        }
+
+        // Puttable price logic (same, no need for SIMD)
+        if (puttablePrice > 0) {
+            #pragma omp simd aligned(tree_data: SIMD_ALIGNMENT) simdlen(SIMDLEN)
+            for (size_t j = 0; j < depth - i; ++j) {
+                tree_data[j] = std::max(tree_data[j], puttablePrice);
+            }
+        }
+
+        // Conversion logic (no need for SIMD on this part, either)
         if (is_in_vec(i, this->conversionDates)) {
             double S_t = this->S * std::pow(factor, depth - (i + 1));
             for (size_t j = 0; j < depth - i; ++j) {
-                this->tree[j] = std::max(this->tree[j], S_t * this->conversionRatio);
+                tree_data[j] = std::max(tree_data[j], S_t * this->conversionRatio);
                 S_t /= factor;
             }
         }
 
+        // Coupon logic with SIMD
         if (is_in_vec(i, this->couponDates)) {
+            #pragma omp simd aligned(tree_data: SIMD_ALIGNMENT) simdlen(SIMDLEN)
             for (size_t j = 0; j < depth - i; ++j) {
-                this->tree[j] += this->coupon;
+                tree_data[j] += this->coupon;
             }
         }
 

@@ -17,6 +17,12 @@ file(GLOB SOURCES "src/*.cpp")
 # Add the executable
 add_executable(afp ${SOURCES})
 
+find_package(OpenMP REQUIRED)
+if(OpenMP_CXX_FOUND)
+    target_compile_options(afp PRIVATE ${OpenMP_CXX_FLAGS})
+    target_link_libraries(afp PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
 # Link the libraries (HDF5, Python, and math library)
 target_link_libraries(afp 
     PRIVATE
