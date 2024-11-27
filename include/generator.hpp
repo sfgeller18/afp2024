@@ -5,6 +5,7 @@
 #include <math.h>
 #include <bits/stdc++.h>
 #include <string>
+#include <memory>
 #include <H5Cpp.h>
 // #include <numeric>
 #include "genNormDist.hpp"
@@ -37,30 +38,35 @@ inline void alignGamma(double* samples, const double& mu, const size_t& vecSize)
 
 // Generate a length n, d-dimensional N(0, 1) Sobol QRNG sample
 class generator {
-    public:
-        generator(const size_t n, const size_t dim, const DistributionType& type = DistributionType::standard, const std::vector<double>& kwargs = {});
-        ~generator();
-        double* getSamples() const;
-        double getSamples(size_t i, size_t j) const {
-            return samples[i * dim + j];
-        }
-        void printSamples() const {
-            for (size_t i = 0; i < size; ++i) {
-                for (size_t j = 0; j < dim; ++j) {
-                    std::cout << samples[i * dim + j] << " ";
-                }
-                std::cout << std::endl;
+public:
+    generator(size_t n, size_t dim, 
+              const DistributionType& type = DistributionType::standard, 
+              const std::vector<double>& kwargs = {});
+
+    ~generator() = default;
+
+    const double* getSamples() const {return samples.get();}
+    double* operator[](size_t i) {return samples.get() + i * dim;}
+
+    void printSamples() const {
+        for (size_t i = 0; i < size; ++i) {
+            for (size_t j = 0; j < dim; ++j) {
+                std::cout << samples[i * dim + j] << " ";
             }
+            std::cout << std::endl;
         }
-        void writeSamplesToFile(const std::string& filename = "") const;
-        void printMoments() const;
-        void plotSamples(const std::string& outputPath = "") const;
-    private:
-        const size_t size;
-        const size_t dim;
-        double* samples;
-        std::vector<double> distParams;
-        DistributionType distribution;
+    }
+
+    void writeSamplesToFile(const std::string& filename = "") const;
+    void printMoments() const;
+    void plotSamples(const std::string& outputPath = "") const;
+
+private:
+    const size_t size;
+    const size_t dim;
+    std::unique_ptr<double[]> samples;
+    std::vector<double> distParams;
+    DistributionType distribution;
 };
 
 class qrngNormal : public generator {

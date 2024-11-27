@@ -43,6 +43,7 @@ public:
     double value() const {return tree[0];}
 protected:
     alignas(SIMD_ALIGNMENT) std::array<double, BINOMIAL_HOLDER_LENGTH(depth)> tree;
+    double dt, factor, p_u, p_d;
     double S, K, r, y, sigma, T;
 };
 
@@ -50,37 +51,15 @@ template <size_t depth>
 BinomialTree<depth>::BinomialTree(double S, double K, double r, double y, double sigma, double T)
     : S(S), K(K), r(r), y(y), sigma(sigma), T(T) {
     tree.fill(0.0);
+    dt = T / (depth - 1);
+    std::tie(p_u, p_d) = bin_probs(r, y, sigma, dt);
+    factor = std::exp(sigma * dt);
 }
 
 template <size_t depth>
 void BinomialTree<depth>::run() {
     // Logic to be implemented
 }
-
-// ============================= TrinomialTree =============================
-template <size_t depth>
-class TrinomialTree {
-public:
-    TrinomialTree(double S, double K, double r, double y, double sigma, double T);
-    virtual void run();
-    double value() const {return tree[0];}
-
-protected:
-    std::array<double, TRINOMIAL_HOLDER_LENGTH(depth)> tree;
-    double S, K, r, y, sigma, T;
-};
-
-template <size_t depth>
-TrinomialTree<depth>::TrinomialTree(double S, double K, double r, double y, double sigma, double T)
-    : S(S), K(K), r(r), y(y), sigma(sigma), T(T) {
-    tree.fill(0.0);
-}
-
-template <size_t depth>
-void TrinomialTree<depth>::run() {
-    // Logic to be implemented
-}
-
 
 // ============================= NaiveConvertibleTree =============================
 
@@ -94,14 +73,11 @@ public:
     void run() override;
 
 private:
-    void initConvertibleTree(size_t convert_idx_max, double base);
-    void iterateConvertibleTree();
+    void initConvertibleTree(double* rn_rate_data, double* tree_data, size_t convert_idx_max, double base);
+    void iterateConvertibleTree(double* rn_rate_data, double* tree_data);
 
 private:
     alignas(SIMD_ALIGNMENT) std::array<double, depth> rn_rate; // Risk-neutral rate holder
-    double dt;
-    double p_u, p_d;
-    double factor;
     bool isCallable;
     bool isPuttable;
 
@@ -123,23 +99,16 @@ NaiveConvertibleTree<depth>::NaiveConvertibleTree(double S, double K, double r, 
     double callablePrice, double puttablePrice)
     : BinomialTree<depth>(S, K, r, y, sigma, T), principal(principal), coupon(coupon), cs(cs), conversionRatio(conversionRatio), conversionPrice(conversionPrice),
     conversionDates(conversionDates), couponDates(couponDates), callablePrice(callablePrice), puttablePrice(puttablePrice) {
-        dt = this->T / (depth - 1);
-        std::tie(p_u, p_d) = bin_probs(this->r, this->y, this->sigma, dt);
-        factor = std::exp(this->sigma * dt);
-
         isCallable = callablePrice > 0.0;
         isPuttable = puttablePrice > 0.0;
     }
 
 
 template <size_t depth>
-inline void NaiveConvertibleTree<depth>::initConvertibleTree(size_t convert_idx_max, double base) {
-    double* rn_rate_data = rn_rate.data();
-    double* tree_data = this->tree.data();
-
+inline void NaiveConvertibleTree<depth>::initConvertibleTree(double* rn_rate_data, double* tree_data, size_t convert_idx_max, double base) {
     #pragma omp simd aligned(tree_data: SIMD_ALIGNMENT) aligned(rn_rate_data: SIMD_ALIGNMENT) simdlen(SIMDLEN)
     for (size_t i = 0; i < convert_idx_max; ++i) {
-        tree_data[i] = base * std::pow(factor, depth - 1 - 2 * i) + this->coupon;
+        tree_data[i] = base * std::pow(this->factor, depth - 1 - 2 * i) + this->coupon;
         rn_rate_data[i] = this->r; // Initial risk-free rate for convertible nodes
     }
 
@@ -162,20 +131,12 @@ inline void NaiveConvertibleTree<depth>::initConvertibleTree(size_t convert_idx_
 }
 
 template <size_t depth>
-inline void NaiveConvertibleTree<depth>::iterateConvertibleTree() {
-    double* rn_rate_data = rn_rate.data();
-    double* tree_data = this->tree.data();
-
-    // Update risk-free rate and tree values using SIMD
+inline void NaiveConvertibleTree<depth>::iterateConvertibleTree(double* rn_rate_data, double* tree_data) {
     for (size_t i = 1; i < depth; ++i) {
-        #pragma omp simd aligned(rn_rate_data: SIMD_ALIGNMENT) simdlen(SIMDLEN)
+        #pragma omp simd aligned(rn_rate_data:SIMD_ALIGNMENT), aligned(tree_data:SIMD_ALIGNMENT) simdlen(SIMDLEN)
         for (size_t j = 0; j < depth - i; ++j) {
-            rn_rate_data[j] = p_u * rn_rate_data[j] + p_d * rn_rate_data[j + 1];
-        }
-
-        #pragma omp simd aligned(tree_data: SIMD_ALIGNMENT) simdlen(SIMDLEN)
-        for (size_t j = 0; j < depth - i; ++j) {
-            tree_data[j] = std::exp(-rn_rate_data[j] * dt) * (p_u * tree_data[j] + p_d * tree_data[j + 1]);
+            rn_rate_data[j] = this->p_u * rn_rate_data[j] + this->p_d * rn_rate_data[j + 1];
+            tree_data[j] = std::exp(-rn_rate_data[j] * this->dt) * (this->p_u * tree_data[j] + this->p_d * tree_data[j + 1]);
         }
 
         // Apply callable and puttable price conditions
@@ -195,10 +156,10 @@ inline void NaiveConvertibleTree<depth>::iterateConvertibleTree() {
 
         // Handle conversion dates (apply conversion ratio)
         if (is_in_vec(i, this->conversionDates)) {
-            double S_t = this->S * std::pow(factor, depth - (i + 1));
+            double S_t = this->S * std::pow(this->factor, depth - (i + 1));
             for (size_t j = 0; j < depth - i; ++j) {
                 tree_data[j] = std::max(tree_data[j], S_t * this->conversionRatio);
-                S_t /= factor;
+                S_t /= this->factor;
             }
         }
 
@@ -228,15 +189,15 @@ inline void NaiveConvertibleTree<depth>::iterateConvertibleTree() {
 template <size_t depth>
 void NaiveConvertibleTree<depth>::run() {
     double moneyness = this->conversionPrice / this->S;
-    size_t convert_idx_max = std::floor(0.5 * (depth - 1 - (std::log(moneyness) / std::log(factor))));
+    size_t convert_idx_max = std::floor(0.5 * (depth - 1 - (std::log(moneyness) / std::log(this->factor))));
     double base = this->S * this->conversionRatio;
 
     double* rn_rate_data = rn_rate.data();
     double* tree_data = this->tree.data();
     
-    // Initialize the terminal nodes with initial rates
-    this->initConvertibleTree(convert_idx_max, base);
-    this->iterateConvertibleTree();
+    this->initConvertibleTree(rn_rate_data, tree_data, convert_idx_max, base);
+    this->iterateConvertibleTree(rn_rate_data, tree_data);
 }
+
 
 #endif

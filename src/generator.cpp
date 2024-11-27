@@ -105,15 +105,16 @@ inline void generateSkewNormalDistribution(double* samples, const size_t size, c
 // Generator constructor
 generator::generator(const size_t n, const size_t dim, const DistributionType& type, const std::vector<double>& kwargs)
     : size(n), dim(dim), samples(new double[n * dim]), distribution(type) {
+    double* sample_ptr = samples.get();
     switch (type) {
         case standard:
-            generateStandardDistribution(samples, size, dim, kwargs);
+            generateStandardDistribution(sample_ptr, size, dim, kwargs);
             break;
         case general:
-            generateGeneralDistribution(samples, size, dim, kwargs);
+            generateGeneralDistribution(sample_ptr, size, dim, kwargs);
             break;
         case skewNormal:
-            generateSkewNormalDistribution(samples, size, dim, kwargs);
+            generateSkewNormalDistribution(sample_ptr, size, dim, kwargs);
             break;
         default:
             throw std::invalid_argument("Invalid distribution type.");
@@ -121,45 +122,74 @@ generator::generator(const size_t n, const size_t dim, const DistributionType& t
 
     // Shuffle samples for added randomness
     std::mt19937 gen = mtgen();
-    std::shuffle(samples, samples + size * dim, gen);
+    // std::shuffle(sample_ptr, sample_ptr + size * dim, gen); // For sobol generator once re-implemented
 }
 
-    
+void generator::printMoments() const {
+    // Vectors to store per-dimension statistics
+    std::vector<double> means(dim, 0.0);
+    std::vector<double> variances(dim, 0.0);
+    std::vector<double> skewnesses(dim, 0.0);
+    std::vector<double> kurtoses(dim, 0.0);
 
-    void generator::printMoments() const {
-        std::vector<double> moments(4, 0.0);
+    std::vector<std::vector<double>> covMatrix(dim, std::vector<double>(dim, 0.0));
 
-        // Calculate the mean (first moment)
-        double mean = std::accumulate(samples, samples + size * dim, 0.0) / (size * dim);
-
-
-        // Calculate the second moment (variance)
-        std::for_each(samples, samples + size * dim, [&](double val) {
-            moments[1] += (val - mean) * (val - mean);
-            double diff = val - mean;
-            moments[2] += diff * diff * diff;
-            moments[3] += diff * diff * diff * diff;
-        });
-
-        moments[1] /= (size * dim);
-        moments[2] /= (size * dim);
-        moments[3] /= (size * dim);
-
-        
-
-        std::cout << "Mean: " << mean << std::endl;
-        std::cout << "Variance: " << moments[1] << std::endl;
-        std::cout << "Skewness: " << moments[2] / std::pow(moments[1], 1.5) << std::endl;
-        std::cout << "Kurtosis: " << moments[3] / (moments[1] * moments[1]) - 3.0 << std::endl;
+    double* sample_ptr = samples.get();
+    // Compute means
+    for (size_t j = 0; j < dim; ++j) {
+        double sum = 0.0;
+        for (size_t i = 0; i < size; ++i) {
+            sum += sample_ptr[j * size + i];
+        }
+        means[j] = sum / size;
     }
 
 
-generator::~generator() {
-    delete[] samples;
+    // Compute variance, skewness, kurtosis, and covariance
+    for (size_t j = 0; j < dim; ++j) {
+        for (size_t i = 0; i < size; ++i) {
+            double diff = sample_ptr[j * size + i] - means[j];
+            variances[j] += diff * diff;
+            skewnesses[j] += diff * diff * diff;
+            kurtoses[j] += diff * diff * diff * diff;
+        }
+        variances[j] /= size;
+        skewnesses[j] /= size;
+        kurtoses[j] /= size;
+
+        skewnesses[j] /= std::pow(variances[j], 1.5);
+        kurtoses[j] = kurtoses[j] / (variances[j] * variances[j]) - 3.0;  // Excess kurtosis
+    }
+
+    // Compute covariance matrix
+for (size_t j1 = 0; j1 < dim; ++j1) {
+    for (size_t j2 = j1; j2 < dim; ++j2) {
+        for (size_t i = 0; i < size; ++i) {
+            covMatrix[j1][j2] += (sample_ptr[j1 * size + i] - means[j1]) * 
+                                 (sample_ptr[j2 * size + i] - means[j2]);
+        }
+        covMatrix[j1][j2] /= size;
+        covMatrix[j2][j1] = covMatrix[j1][j2];  // Symmetric matrix
+    }
 }
 
-double* generator::getSamples() const {
-    return samples;
+    // Output the results
+    std::cout << "Per-dimension Statistics:\n";
+    for (size_t j = 0; j < dim; ++j) {
+        std::cout << "Dimension " << j << ":\n";
+        std::cout << "  Mean: " << means[j] << "\n";
+        std::cout << "  Standard Deviation: " << std::sqrt(variances[j]) << "\n";
+        std::cout << "  Skewness: " << skewnesses[j] << "\n";
+        std::cout << "  Kurtosis: " << kurtoses[j] << "\n";
+    }
+
+    std::cout << "\nCovariance Matrix:\n";
+    for (size_t j1 = 0; j1 < dim; ++j1) {
+        for (size_t j2 = 0; j2 < dim; ++j2) {
+            std::cout << covMatrix[j1][j2] << " ";
+        }
+        std::cout << "\n";
+    }
 }
 
 void generator::writeSamplesToFile(const std::string& filename) const {
@@ -170,7 +200,7 @@ void generator::writeSamplesToFile(const std::string& filename) const {
         hsize_t dims[2] = {size, dim}; // Rows: `size`, Columns: `dim`
         H5::DataSpace dataspace(2, dims);
         H5::DataSet dataset = file.createDataSet("samples", H5::PredType::NATIVE_DOUBLE, dataspace);
-        dataset.write(samples, H5::PredType::NATIVE_DOUBLE);
+        dataset.write(samples.get(), H5::PredType::NATIVE_DOUBLE);
         std::cout << "Data successfully written to HDF5 file: " << outputFilename << std::endl;
 
     } catch (H5::FileIException& e) {
@@ -198,5 +228,5 @@ void generator::plotSamples(const std::string& outputPath) const {
     std::unordered_map<std::string, std::string> kwargs;
     kwargs["output_path"] = outputFilename;
 
-    call_python_w_numpy(samples, dims, "plot_script", kwargs);
+    call_python_w_numpy(samples.get(), dims, "plot_script", kwargs);
 }
